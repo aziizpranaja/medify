@@ -11,7 +11,9 @@
     $(document).ready(function() {
         $('#table').DataTable({
             searching: false,
-            order: [[0, 'desc']],
+            order: [
+                [0, 'desc']
+            ],
         });
         getData()
     });
@@ -20,8 +22,8 @@
         getData()
     })
 
-    function getData(){
-        
+    function getData() {
+
         $('#loading-filter').show();
         var dataTableObj = $('#table').DataTable();
         var filter_kode = $('#filter-kode').val()
@@ -31,11 +33,12 @@
         dataTableObj.clear().draw();
 
         $.ajax({
-            url: '{{url("master-items/search")}}',
+            url: '{{ url('master-items/search') }}',
             dataType: 'json',
             tryCount: 0,
             retryLimit: 3,
-            data: 'kode=' + filter_kode + '&nama=' + filter_nama + '&hargamin=' + filter_harga_min + '&hargamax=' + filter_harga_max,
+            data: 'kode=' + filter_kode + '&nama=' + filter_nama + '&hargamin=' + filter_harga_min +
+                '&hargamax=' + filter_harga_max,
             success: function(results) {
                 var data = results.data
 
@@ -45,16 +48,33 @@
                     harga_jual = Math.round(harga_jual)
                     var kode = item.kode;
 
-                    var html = `<a href="{{url('master-items/view/')}}/` + kode + `" class="btn btn-primary">View</a>`
+                    var html = `<a href="{{ url('master-items/view/') }}/` + kode +
+                        `" class="btn btn-primary">View</a>`
 
-                    $.each(item, function(obj_name, obj_value) {
-                        if (obj_name == 'laba') return false;
-                        array_temp.push(obj_value)
-                    })
+                    // Add foto column
+                    var foto_html = item.foto ? '<img src="{{ asset('uploads/master_items/') }}/' +
+                        item.foto + '" width="50" height="50" style="object-fit: cover;">' : '-';
+
+                    // Add kategori column
+                    var kategori_html = '';
+                    if (item.kategoris && item.kategoris.length > 0) {
+                        var kategori_names = item.kategoris.map(function(k) {
+                            return k.nama;
+                        });
+                        kategori_html = kategori_names.join(', ');
+                    } else {
+                        kategori_html = '-';
+                    }
+
+                    array_temp.push(foto_html)
+                    array_temp.push(item.kode)
+                    array_temp.push(item.nama)
+                    array_temp.push(item.jenis)
+                    array_temp.push(kategori_html)
+                    array_temp.push(item.harga_beli)
                     array_temp.push(harga_jual)
                     array_temp.push(item.supplier)
                     array_temp.push(html)
-
 
                     dataTableObj.row.add(array_temp).draw(true);
                 });

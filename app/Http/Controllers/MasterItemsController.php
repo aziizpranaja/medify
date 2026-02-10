@@ -23,11 +23,17 @@ class MasterItemsController extends Controller
 
         if (!empty($kode)) $data_search = $data_search->where('kode', $kode);
         if (!empty($nama)) $data_search = $data_search->where('nama', 'LIKE', '%' . $nama . '%');
-        if (!empty($hargamin)) $data_search = $data_search->where('harga_beli', '>=', $hargamin)->where('harga_beli', '<=', $hargamax);
 
-        $data_search = $data_search->select('kode', 'nama', 'jenis', 'harga_beli', 'laba', 'supplier')->orderBy('id')->get();
+        // Fix price filter logic
+        if (!empty($hargamin) && !empty($hargamax)) {
+            $data_search = $data_search->where('harga_beli', '>=', $hargamin)->where('harga_beli', '<=', $hargamax);
+        } elseif (!empty($hargamin)) {
+            $data_search = $data_search->where('harga_beli', '>=', $hargamin);
+        } elseif (!empty($hargamax)) {
+            $data_search = $data_search->where('harga_beli', '<=', $hargamax);
+        }
 
-
+        $data_search = $data_search->with('kategoris')->orderBy('id')->get();
         return json_encode([
             'status' => 200,
             'data' => $data_search
@@ -39,10 +45,11 @@ class MasterItemsController extends Controller
         if ($method == 'new') {
             $item = [];
         } else {
-            $item = MasterItem::find($id);
+            $item = MasterItem::with('kategoris')->find($id);
         }
         $data['item'] = $item;
         $data['method'] = $method;
+        $data['kategoris'] = \App\Models\Kategori::all();
         return view('master_items.form.index', $data);
     }
 
@@ -71,7 +78,23 @@ class MasterItemsController extends Controller
         $data_item->kode = $kode;
         $data_item->supplier = $request->supplier;
         $data_item->jenis = $request->jenis;
+
+        // Handle image upload
+        if ($request->hasFile('foto')) {
+            $file = $request->file('foto');
+            $filename = time() . '_' . $file->getClientOriginalName();
+            $file->move(public_path('uploads/master_items'), $filename);
+            $data_item->foto = $filename;
+        }
+
         $data_item->save();
+
+        // Handle kategori relationships
+        if ($request->has('kategoris')) {
+            $data_item->kategoris()->sync($request->kategoris);
+        } else {
+            $data_item->kategoris()->detach();
+        }
 
         return redirect('master-items');
     }
@@ -85,13 +108,12 @@ class MasterItemsController extends Controller
     public function updateRandomData()
     {
         $data = MasterItem::get();
-        foreach($data as $item)
-        {
+        foreach ($data as $item) {
             $kode = $item->id;
             $kode = str_pad($kode, 5, '0', STR_PAD_LEFT);
 
-            $item->harga_beli = rand(100,1000000);
-            $item->laba = rand(10,99);
+            $item->harga_beli = rand(100, 1000000);
+            $item->laba = rand(10, 99);
             $item->kode = $kode;
             $item->supplier = $this->getRandomSupplier();
             $item->jenis = $this->getRandomJenis();
@@ -101,15 +123,53 @@ class MasterItemsController extends Controller
 
     private function getRandomSupplier()
     {
-        $array = ['Tokopaedi','Bukulapuk','TokoBagas','E Commurz','Blublu'];
-        $random = rand(0,4);
+        $array = ['Tokopaedi', 'Bukulapuk', 'TokoBagas', 'E Commurz', 'Blublu'];
+        $random = rand(0, 4);
         return $array[$random];
     }
 
     private function getRandomJenis()
     {
-        $array = ['Obat','Alkes','Matkes','Umum','ATK'];
-        $random = rand(0,4);
+        $array = ['Obat', 'Alkes', 'Matkes', 'Umum', 'ATK'];
+        $random = rand(0, 4);
         return $array[$random];
+    }
+
+    public function downloadExcel()
+    {
+        $masterItems = MasterItem::with('kategoris')->get();
+        
+        // Create CSV content (Excel compatible)
+        $csvContent = "\xEF\xBB\xBF"; // UTF-8 BOM for Excel
+        $csvContent .= "No,Nama Kategori,Nama Items,Nama Supplier,Harga,Laba,Harga Jual\n";
+        
+        $no = 1;
+        foreach ($masterItems as $item) {
+            // Get kategori names
+            $kategoriNames = $item->kategoris->pluck('nama')->implode(', ');
+            if (empty($kategoriNames)) {
+                $kategoriNames = '-';
+            }
+            
+            $hargaJual = $item->harga_beli + ($item->harga_beli * $item->laba / 100);
+            
+            $csvContent .= $no . ",";
+            $csvContent .= '"' . str_replace('"', '""', $kategoriNames) . '",';
+            $csvContent .= '"' . str_replace('"', '""', $item->nama) . '",';
+            $csvContent .= '"' . str_replace('"', '""', $item->supplier) . '",';
+            $csvContent .= $item->harga_beli . ",";
+            $csvContent .= $item->laba . ",";
+            $csvContent .= $hargaJual . "\n";
+            
+            $no++;
+        }
+        
+        $filename = 'master_items_' . date('Y-m-d_H-i-s') . '.csv';
+        
+        return response($csvContent)
+            ->header('Content-Type', 'text/csv')
+            ->header('Content-Disposition', 'attachment; filename="' . $filename . '"')
+            ->header('Cache-Control', 'no-cache, must-revalidate')
+            ->header('Expires', 'Sat, 26 Jul 1997 05:00:00 GMT');
     }
 }
